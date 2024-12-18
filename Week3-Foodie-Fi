@@ -1,0 +1,29 @@
+--B1
+SELECT count(DISTINCT(customer_id))
+FROM subscriptions;
+
+--B2
+SELECT EXTRACT(MONTH FROM start_date) AS month,
+  COUNT(customer_id) AS customer_count 
+ FROM subscriptions 
+ WHERE 
+  plan_id = (SELECT plan_id FROM plans WHERE plan_name = 'trial' )
+ GROUP BY month
+ ORDER BY month asc;
+ 
+ --B3
+SELECT plans.plan_id,
+ COUNT(start_date) AS events
+FROM subscriptions
+RIGHT JOIN plans USING (plan_id)
+WHERE EXTRACT(YEAR FROM start_date) > '2020'
+GROUP BY plan_id
+ORDER BY plan_id;
+
+--B4
+(Select count(plans.plan_id)
+From plans
+where plan_id = 4) /
+(SELECT count(DISTINCT(customer_id))
+ FROM subscriptions
+ RIGHT JOIN plans USING (plan_id));
