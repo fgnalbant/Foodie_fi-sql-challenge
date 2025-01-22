@@ -27,3 +27,111 @@ where plan_id = 4) /
 (SELECT count(DISTINCT(customer_id))
  FROM subscriptions
  RIGHT JOIN plans USING (plan_id));
+
+-- B6 What is the number and percentage of customer plans after their initial free trial?
+WITH CTE AS (
+    SELECT
+        customer_id,
+        plan_name,
+        ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY start_date ASC) AS rank
+    FROM 
+        foodie_fi.subscriptions AS S
+    INNER JOIN 
+        foodie_fi.plans AS P ON P.plan_id = S.plan_id
+)
+SELECT 
+    plan_name,
+    COUNT(customer_id) AS customer_count,
+    ROUND(
+        (COUNT(customer_id) * 1.0 / (SELECT COUNT(DISTINCT customer_id) FROM CTE)) * 100, 1
+    ) AS customer_percent
+FROM 
+    CTE
+WHERE 
+    rank = 2
+GROUP BY 
+    plan_name;
+
+-- B7 What is the customer count and percentage breakdown of all 5 plan_name values at 2020-12-31?
+WITH CTE AS (
+SELECT *
+,ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY start_date DESC) as rn
+FROM foodie_fi.subscriptions
+WHERE start_date <= '2020-12-31'
+)
+SELECT 
+plan_name,
+COUNT(customer_id) as customer_count,
+ROUND((COUNT(customer_id)*1.0/(SELECT COUNT(DISTINCT customer_id) FROM CTE))*100) as percent_of_customers
+FROM CTE
+INNER JOIN foodie_fi.plans as P on CTE.plan_id = P.plan_id
+WHERE rn = 1
+GROUP BY plan_name;
+
+-- B8. How many customers have upgraded to an annual plan in 2020? Any customer going to annual plan
+
+SELECT COUNT(customer_id) as upgrade_annual
+FROM foodie_fi.subscriptions as S
+INNER JOIN foodie_fi.plans as P on P.plan_id = S.plan_id
+WHERE DATE_PART('year',start_date) = 2020 AND plan_name = 'pro annual';
+
+-- B9 How many days on average does it take for a customer to an annual plan from the day they join Foodie-Fi?
+WITH TRIAL AS (
+SELECT 
+customer_id,
+start_date as trial_start
+FROM foodie_fi.subscriptions
+WHERE plan_id = 0
+)
+, ANNUAL AS (
+SELECT 
+customer_id,
+start_date as annual_start
+FROM foodie_fi.subscriptions
+WHERE plan_id = 3
+)
+SELECT 
+ROUND(AVG(annual_start - trial_start), 0) AS from_trial_to_annual
+FROM TRIAL as T
+INNER JOIN ANNUAL as A on T.customer_id = A.customer_id;
+
+-- B10 Can you further breakdown this average value into 30 day periods (i.e. 0-30 days, 31-60 days etc)
+WITH duration_table AS (
+  SELECT s2.start_date - s1.start_date AS duration,
+  WIDTH_BUCKET(s2.start_date - s1.start_date, 1, 360, 12) AS bin
+  FROM foodie_fi.subscriptions s1
+  JOIN foodie_fi.subscriptions s2
+  ON s1.customer_id = s2.customer_id
+   AND s1.plan_id +  3 = s2.plan_id
+  WHERE s2.plan_id = 3
+  ORDER BY duration 
+ )
+ SELECT CONCAT((bin-1)*30+1,' - ',bin*30,' days') AS breakdown, 
+  ROUND(AVG(duration)) AS avg_in_days,
+  COUNT(bin) AS customers
+ FROM duration_table
+ GROUP BY bin;
+
+ -- B11. How many customers downgraded from a pro monthly to a basic monthly plan in 2020?
+WITH PRO_MON AS (
+SELECT 
+customer_id,
+start_date as pro_monthly_start
+FROM foodie_fi.subscriptions
+WHERE plan_id = 2
+)
+,BASIC_MON AS (
+SELECT 
+customer_id,
+start_date as basic_monthly_start
+FROM foodie_fi.subscriptions
+WHERE plan_id = 1
+)
+SELECT 
+P.customer_id,
+pro_monthly_start,
+basic_monthly_start
+FROM PRO_MON as P
+INNER JOIN BASIC_MON as B on P.customer_id = B.customer_id
+WHERE pro_monthly_start < basic_monthly_start
+AND DATE_PART('year',basic_monthly_start) = 2020;
